@@ -1411,6 +1411,57 @@ function transcriptAsText() {
     .join("\n");
 }
 
+function transcriptModeLabel() {
+  if (state.transcriptMode === "translated") return "译文";
+  if (state.transcriptMode === "bilingual") return "双语";
+  return "原文";
+}
+
+/** 避免用户字幕里的 markdown 符号破坏导出结构。 */
+function escapeMarkdownInline(text) {
+  return String(text || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/([*_#[\]()])/g, "\\$1");
+}
+
+function transcriptAsMarkdown() {
+  const title = String(state.data?.videoInfo?.title || state.bvid || "transcript")
+    .replace(/\s+/g, " ")
+    .trim();
+  const owner = String(state.data?.videoInfo?.owner || "").trim();
+  const url = `https://www.bilibili.com/video/${state.bvid}`;
+  const bilingual = state.transcriptMode === "bilingual";
+
+  const header = [
+    `# ${escapeMarkdownInline(title)}`,
+    "",
+    owner ? `- **UP主**：${escapeMarkdownInline(owner)}` : null,
+    `- **链接**：${url}`,
+    `- **导出视图**：${transcriptModeLabel()}`,
+    "",
+    "---",
+    "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const body = (state.data?.segments || [])
+    .map((segment) => {
+      const stamp = formatTimestamp(segment.start);
+      if (!bilingual) {
+        return `**[${stamp}]** ${escapeMarkdownInline(segmentDisplayText(segment))}`;
+      }
+      const source = escapeMarkdownInline(sourceText(segment));
+      const translated = state.translated[segment.id];
+      return translated
+        ? `**[${stamp}]** ${source}\n\n> ${escapeMarkdownInline(translated)}`
+        : `**[${stamp}]** ${source}`;
+    })
+    .join("\n\n");
+
+  return header + body;
+}
+
 function flashButton(button, text) {
   const original = button.textContent;
   button.textContent = text;
@@ -1441,14 +1492,13 @@ async function copyTranscript() {
 function exportTranscript() {
   if (!state.data) return;
   const title = state.data.videoInfo?.title || state.bvid;
-  const header = `${title}\n${state.data.videoInfo?.owner || ""}\nhttps://www.bilibili.com/video/${state.bvid}\n\n`;
-  const blob = new Blob([header + transcriptAsText()], {
-    type: "text/plain;charset=utf-8",
+  const blob = new Blob([transcriptAsMarkdown()], {
+    type: "text/markdown;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${sanitizeFilename(title)}.txt`;
+  link.download = `${sanitizeFilename(title)}.md`;
   link.click();
   URL.revokeObjectURL(url);
 }

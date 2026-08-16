@@ -136,7 +136,7 @@ function createContext({ transcript, analysis, videoAvailable = { available: tru
   // 所以在末尾追加一行，从同一个词法作用域里把要测的绑定递出来。
   const source = fs.readFileSync(path.join(ROOT, "sidepanel.js"), "utf8");
   vm.runInContext(
-    `${source}\n;globalThis.__api = { state, loadTranscript, analyze, segmentDisplayText, paintSegmentText, setTranscriptMode, selectionContext, applySearchFilter, updateFollowPill, jumpToActive, closeSearch, renderNoteCard, playNote, loadNotes, syncQuoteButtonsWithNotes };`,
+    `${source}\n;globalThis.__api = { state, loadTranscript, analyze, segmentDisplayText, paintSegmentText, setTranscriptMode, selectionContext, applySearchFilter, updateFollowPill, jumpToActive, closeSearch, renderNoteCard, playNote, loadNotes, syncQuoteButtonsWithNotes, transcriptAsText, transcriptAsMarkdown };`,
     context,
   );
 
@@ -866,5 +866,48 @@ test("生成失败只影响概览这一块，字幕仍然可读", async () => {
     "ready",
     "概览失败不该把整个面板打回错误态，字幕还在",
   );
+});
+
+// ============================================================
+// 复制 / 导出
+// ============================================================
+
+test("导出 Markdown 带标题元数据与带时间戳的字幕正文", async () => {
+  const ctx = createContext({ transcript: transcriptResult() });
+  ctx.state.bvid = "BV1xx411c7mD";
+  await ctx.loadTranscript();
+
+  const markdown = ctx.transcriptAsMarkdown();
+  assert.match(markdown, /^# 标题/);
+  assert.match(markdown, /\*\*UP主\*\*：UP主/);
+  assert.match(markdown, /https:\/\/www\.bilibili\.com\/video\/BV1xx411c7mD/);
+  assert.match(markdown, /\*\*\[0:00\]\*\* 第一段原文/);
+  assert.match(markdown, /\*\*\[0:05\]\*\* 第二段原文/);
+});
+
+test("双语导出时译文用引用块，且上行跟随顺句稿", async () => {
+  const ctx = createContext({
+    transcript: transcriptResult({
+      language: "ai-zh",
+      polished: { s1: "第一段，顺过了。" },
+      translated: { s1: "Line one translated." },
+    }),
+  });
+  ctx.state.bvid = "BV1xx411c7mD";
+  await ctx.loadTranscript();
+
+  const markdown = ctx.transcriptAsMarkdown();
+  assert.match(markdown, /\*\*导出视图\*\*：双语/);
+  assert.match(markdown, /\*\*\[0:00\]\*\* 第一段，顺过了。\n\n> Line one translated\./);
+});
+
+test("复制仍走纯文本格式，不受 Markdown 导出影响", async () => {
+  const ctx = createContext({ transcript: transcriptResult() });
+  ctx.state.bvid = "BV1xx411c7mD";
+  await ctx.loadTranscript();
+
+  const text = ctx.transcriptAsText();
+  assert.match(text, /^\[0:00\] 第一段原文/);
+  assert.doesNotMatch(text, /^# /m);
 });
 
